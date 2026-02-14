@@ -24,6 +24,7 @@ Options (env vars):
 import asyncio
 import logging
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 from strands.experimental.bidi import BidiAgent
@@ -31,6 +32,7 @@ from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
 
 from echo_cancel import AecAudioIO
 from strands.experimental.bidi.types.events import (
+    BidiAudioStreamEvent,
     BidiConnectionCloseEvent,
     BidiConnectionStartEvent,
     BidiErrorEvent,
@@ -41,6 +43,9 @@ from strands.experimental.bidi.types.events import (
     BidiTranscriptStreamEvent,
 )
 
+from strands.experimental.hooks.events import BidiMessageAddedEvent
+from strands.hooks.registry import HookProvider, HookRegistry
+
 from strands_async_tools import AsyncTaskResult
 from strands_tools.calculator import calculator
 from strands_tools.current_time import current_time
@@ -50,6 +55,80 @@ if TYPE_CHECKING:
     from strands.experimental.bidi.agent.agent import BidiAgent as BidiAgentType
 
 logger = logging.getLogger(__name__)
+
+
+def _configure_logging() -> None:
+    """Set up debug logging to voice_debug.log for diagnosing hangs.
+
+    The SDK's bidi internals log at DEBUG level. Writing those to a file
+    lets us do post-mortem analysis after a hang without cluttering the
+    console. Set LOG_LEVEL=DEBUG to also see them on stderr.
+    """
+    log_file = os.environ.get("LOG_FILE", "voice_debug.log")
+    file_handler = logging.FileHandler(log_file, mode="w")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s.%(msecs)03d %(name)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    )
+
+    for name in ("strands.experimental.bidi", "strands_async_tools", __name__):
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.DEBUG)
+        lg.addHandler(file_handler)
+
+    # If the user wants console debug output too
+    console_level = os.environ.get("LOG_LEVEL", "WARNING").upper()
+    if console_level != "WARNING":
+        logging.basicConfig(level=console_level, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+
+# ---------------------------------------------------------------------------
+# Sliding window context management (BidiAgent has none built-in)
+# ---------------------------------------------------------------------------
+
+
+class SlidingWindowHook(HookProvider):
+    """Trims message history to prevent context overflow.
+
+    BidiAgent accumulates messages without limit. Nova Sonic has a finite
+    context window and an 8-minute connection limit — when the context fills
+    up, the stream drops silently. This hook keeps the history bounded.
+
+    Tool use and tool result messages always come in adjacent pairs. The
+    trim logic works backwards from the cut point to avoid splitting a pair.
+    """
+
+    def __init__(self, max_messages: int = 40) -> None:
+        self._max = max_messages
+
+    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
+        registry.add_callback(BidiMessageAddedEvent, self._on_message)
+
+    def _on_message(self, event: BidiMessageAddedEvent) -> None:
+        messages = event.agent.messages
+        if len(messages) <= self._max:
+            return
+
+        # How many to remove from the front
+        excess = len(messages) - self._max
+
+        # Don't split a toolUse/toolResult pair — if the message at the
+        # cut point is a toolResult, include its preceding toolUse too.
+        while excess < len(messages):
+            msg = messages[excess]
+            content = msg.get("content", [])
+            if content and isinstance(content[0], dict) and "toolResult" in content[0]:
+                # This is a tool result — back up one to include the tool use
+                excess = max(excess - 1, 0)
+                break
+            # If it's a toolUse, advance one to include the toolResult
+            if content and isinstance(content[0], dict) and "toolUse" in content[0]:
+                excess += 1
+                continue
+            break
+
+        del messages[:excess]
+        logger.debug("context trimmed: removed %d messages, %d remaining", excess, len(messages))
+
 
 # ---------------------------------------------------------------------------
 # Custom BidiInput: injects async tool results as text into the voice stream
@@ -90,15 +169,28 @@ class AsyncResultInput:
 
 
 class ConsoleTranscriptOutput:
-    """BidiOutput that prints conversation transcripts and status to the console."""
+    """BidiOutput that prints conversation transcripts and status to the console.
+
+    Also tracks time since last event to help diagnose hangs.
+    """
+
+    def __init__(self) -> None:
+        self._last_event_time: float = 0
 
     async def start(self, agent: "BidiAgentType") -> None:
-        pass
+        self._last_event_time = time.monotonic()
 
     async def stop(self) -> None:
         pass
 
     async def __call__(self, event: BidiOutputEvent) -> None:
+        now = time.monotonic()
+        gap = now - self._last_event_time if self._last_event_time else 0
+        self._last_event_time = now
+
+        # Log every event to debug file with timing
+        logger.debug("event gap=%.1fs type=%s", gap, type(event).__name__)
+
         if isinstance(event, BidiTranscriptStreamEvent):
             role = event["role"]
             is_final = event["is_final"]
@@ -114,7 +206,7 @@ class ConsoleTranscriptOutput:
         elif isinstance(event, BidiInterruptionEvent):
             print(f"  \033[33m[interrupted]\033[0m {event['reason']}")
 
-        elif isinstance(event, BidiResponseCompleteEvent):
+        elif isinstance(event, (BidiResponseCompleteEvent, BidiAudioStreamEvent)):
             pass  # Normal, no need to print
 
         elif isinstance(event, BidiConnectionCloseEvent):
@@ -122,6 +214,10 @@ class ConsoleTranscriptOutput:
 
         elif isinstance(event, BidiErrorEvent):
             print(f"  \033[31m[error]\033[0m {event['message']}")
+
+        else:
+            # Catch-all: print any event type we don't explicitly handle
+            print(f"  \033[90m[{type(event).__name__}]\033[0m")
 
 
 # ---------------------------------------------------------------------------
@@ -163,8 +259,10 @@ You are a friendly, trusted assistant. You speak out loud — be brief.
 Tools: calculator, current_time (instant), handle_task (background).
 
 RULES:
-- When you start a background task, just say something like "On it" or \
-"Let me check". ONE or TWO words. Do NOT repeat what the user asked for.
+- When you start a background task, acknowledge briefly but VARY your \
+phrasing each time. Examples: "On it", "Let me check", "Looking into that", \
+"One sec", "Sure thing", "Checking now", "Give me a moment". Never use the \
+same acknowledgement twice in a row. Do NOT repeat what the user asked for.
 - When an [ASYNC RESULT] arrives, give ONLY the key takeaway in one sentence. \
 Do not read back file contents, lists, or raw data. The user trusts you — \
 they will ask if they want details.
@@ -178,6 +276,8 @@ they will ask if they want details.
 
 
 async def run() -> None:
+    _configure_logging()
+
     region = os.environ.get("AWS_REGION", "us-east-1")
     voice = os.environ.get("NOVA_SONIC_VOICE", "tiffany")
     model_id = os.environ.get("NOVA_SONIC_MODEL", "amazon.nova-2-sonic-v1:0")
@@ -193,6 +293,7 @@ async def run() -> None:
     print(f"  Voice  : {voice}")
     print(f"  Async  : handle_task (subagent)")
     print(f"  Sync   : calculator, current_time")
+    print(f"  Log    : {os.environ.get('LOG_FILE', 'voice_debug.log')}")
     print("=" * 60)
     print("  Speak into your microphone. Ctrl+C to quit.")
     print("=" * 60)
@@ -221,11 +322,12 @@ async def run() -> None:
         },
     )
 
-    # Create the BidiAgent with our tools
+    # Create the BidiAgent with our tools and sliding window context management
     agent = BidiAgent(
         model=model,
         system_prompt=SYSTEM_PROMPT,
         tools=[handle_task, calculator, current_time],
+        hooks=[SlidingWindowHook(max_messages=40)],
     )
 
     # Audio I/O with echo cancellation (LiveKit WebRTC APM)

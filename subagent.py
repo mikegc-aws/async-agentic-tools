@@ -51,12 +51,11 @@ equation solving, matrix ops)
 File operations are scoped to the workspace/ directory. Always use paths \
 under workspace/ (e.g., workspace/notes.txt, workspace/output.json).
 
-RESPONSE FORMAT:
-Your final response will be spoken aloud. Keep it to ONE sentence: \
-the key outcome or finding only. No preamble, no caveats, no lists. \
-Do NOT read back file contents you wrote — just confirm the action \
-(e.g. "Done, saved to workspace/poem.txt"). If the task found lots of \
-information, give only the single most important takeaway."""
+RESPONSE FORMAT — THIS IS CRITICAL:
+Your response will be READ ALOUD. It MUST be under 30 words. \
+One short sentence. No names, no lists, no examples, no details. \
+Just the core answer or "Done, saved to workspace/filename.txt". \
+Anything over 30 words is a failure."""
 
 
 def _create_subagent() -> Agent:
