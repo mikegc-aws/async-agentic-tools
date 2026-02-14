@@ -26,8 +26,10 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from strands import tool
-from strands.experimental.bidi import BidiAgent, BidiAudioIO
+from strands.experimental.bidi import BidiAgent
 from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
+
+from echo_cancel import AecAudioIO
 from strands.experimental.bidi.types.events import (
     BidiConnectionCloseEvent,
     BidiConnectionStartEvent,
@@ -306,8 +308,10 @@ async def run() -> None:
         tools=[research_topic, analyze_sentiment, fetch_weather, calculate],
     )
 
-    # Audio I/O (microphone + speakers)
-    audio_io = BidiAudioIO()
+    # Audio I/O with echo cancellation (speexdsp via pyaec)
+    # filter_ms: AEC filter length — 300ms covers typical laptop echo path
+    # duck_gain: residual attenuation during playback (0.3 = 70% suppression)
+    audio_io = AecAudioIO(filter_ms=300, duck_gain=0.3)
 
     # Transcript output (prints to console)
     transcript_output = ConsoleTranscriptOutput()
