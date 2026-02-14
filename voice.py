@@ -1,31 +1,31 @@
 """Voice interface for Strands Async Tools using Amazon Nova 2 Sonic.
 
-Speak to the agent through your microphone. Async tools run in the background
-and their results are injected as text, which Nova Sonic speaks aloud.
+Speak to the agent through your microphone. The handle_task tool delegates
+complex work to a subagent running real tools (web search, file I/O, etc.)
+in the background. Results are injected as text, which Nova Sonic speaks aloud.
 
 Run:
-    uv run python voice.py
+    TAVILY_API_KEY=tvly-xxx AWS_REGION=us-east-1 uv run python voice.py
 
 Requires:
     - AWS credentials with Bedrock access (us-east-1)
     - Microphone and speakers
     - Model access for amazon.nova-2-sonic-v1:0
+    - TAVILY_API_KEY env var for web search/extract
 
 Options (env vars):
     AWS_REGION          - AWS region (default: us-east-1)
-    NOVA_SONIC_VOICE    - Voice name (default: matthew)
+    NOVA_SONIC_VOICE    - Voice name (default: tiffany)
     NOVA_SONIC_MODEL    - Model ID (default: amazon.nova-2-sonic-v1:0)
+    SUBAGENT_MODEL      - Subagent model (default: us.anthropic.claude-sonnet-4-20250514-v1:0)
+    TAVILY_API_KEY      - Tavily API key for web search/extract
 """
 
 import asyncio
 import logging
 import os
-import random
-import sys
-import time
 from typing import TYPE_CHECKING, Any
 
-from strands import tool
 from strands.experimental.bidi import BidiAgent
 from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
 
@@ -40,86 +40,16 @@ from strands.experimental.bidi.types.events import (
     BidiTextInputEvent,
     BidiTranscriptStreamEvent,
 )
-from strands.experimental.bidi.types.io import BidiInput, BidiOutput
 
-from strands_async_tools import AsyncToolManager, AsyncTaskResult, tool_async
+from strands_async_tools import AsyncTaskResult
+from strands_tools.calculator import calculator
+from strands_tools.current_time import current_time
+from subagent import handle_task, manager
 
 if TYPE_CHECKING:
     from strands.experimental.bidi.agent.agent import BidiAgent as BidiAgentType
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Async Tool Manager
-# ---------------------------------------------------------------------------
-
-manager = AsyncToolManager(max_workers=4)
-
-# ---------------------------------------------------------------------------
-# Async Tools (same as TUI/demo, but with voice-appropriate timing)
-# ---------------------------------------------------------------------------
-
-
-@tool_async(manager)
-def research_topic(topic: str) -> str:
-    """Research a topic thoroughly and return detailed findings."""
-    delay = random.uniform(8, 15)
-    time.sleep(delay)
-    findings = [
-        f"{topic} has seen 340% growth in the last 2 years.",
-        f"Major players in {topic} include Acme Corp, Nexus Labs, and Orion Systems.",
-        f"Experts predict the {topic} market will reach $50 billion by 2028.",
-        f"Recent regulatory changes may impact {topic} adoption in the EU.",
-        f"A breakthrough paper on {topic} was published last month in Nature.",
-    ]
-    return " ".join(random.sample(findings, k=random.randint(2, 3)))
-
-
-@tool_async(manager)
-def analyze_sentiment(text: str) -> str:
-    """Analyze the sentiment and key themes in a piece of text."""
-    delay = random.uniform(6, 12)
-    time.sleep(delay)
-    sentiments = [
-        "overwhelmingly positive",
-        "cautiously optimistic",
-        "mixed but trending positive",
-    ]
-    themes = ["innovation", "market disruption", "sustainability", "cost efficiency"]
-    return (
-        f"The sentiment is {random.choice(sentiments)}. "
-        f"Key themes are {', '.join(random.sample(themes, k=2))}. "
-        f"Confidence level is {random.randint(75, 98)} percent."
-    )
-
-
-@tool_async(manager)
-def fetch_weather(city: str) -> str:
-    """Get the current weather for a city."""
-    delay = random.uniform(4, 8)
-    time.sleep(delay)
-    conditions = ["sunny", "partly cloudy", "overcast", "light rain", "clear skies"]
-    return (
-        f"The weather in {city} is {random.choice(conditions)}, "
-        f"{random.randint(5, 35)} degrees celsius, "
-        f"humidity {random.randint(30, 90)} percent, "
-        f"wind {random.randint(5, 40)} kilometers per hour."
-    )
-
-
-# ---- Sync tool ----
-
-
-@tool
-def calculate(expression: str) -> str:
-    """Evaluate a simple math expression and return the result immediately."""
-    allowed = {"abs": abs, "min": min, "max": max, "round": round, "int": int, "float": float}
-    try:
-        result = eval(expression, {"__builtins__": {}}, allowed)  # noqa: S307
-        return f"The answer is {result}"
-    except Exception as e:
-        return f"Error: {e}"
-
 
 # ---------------------------------------------------------------------------
 # Custom BidiInput: injects async tool results as text into the voice stream
@@ -228,32 +158,19 @@ def make_async_callback(result_input: AsyncResultInput):
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a friendly voice assistant with access to background tools.
+You are a friendly, trusted assistant. You speak out loud — be brief.
 
-You have these tools available:
-- research_topic: Researches a topic (runs in background, takes a while)
-- analyze_sentiment: Analyzes text sentiment (runs in background)
-- fetch_weather: Gets weather for a city (runs in background)
-- calculate: Does math (returns immediately)
+Tools: calculator, current_time (instant), handle_task (background).
 
-IMPORTANT RULES FOR ASYNC TOOLS:
-When you call research_topic, analyze_sentiment, or fetch_weather, they start \
-running in the background and return a task ID immediately. The actual results \
-will be delivered to you later as text messages tagged [ASYNC RESULT].
-
-When you get a task submitted confirmation:
-- Tell the user you've started the task
-- Continue the conversation naturally
-- Do NOT guess what the results will be
-
-When you receive an [ASYNC RESULT] message:
-- This is an automated delivery, not something the user said
-- Summarize the result naturally and conversationally for the user
-- If other tasks are still pending, mention you're still waiting
-
-Keep your responses short and conversational. You are speaking out loud, \
-not writing. Avoid lists, bullet points, or technical formatting. \
-Speak naturally as in a face-to-face conversation."""
+RULES:
+- When you start a background task, just say something like "On it" or \
+"Let me check". ONE or TWO words. Do NOT repeat what the user asked for.
+- When an [ASYNC RESULT] arrives, give ONLY the key takeaway in one sentence. \
+Do not read back file contents, lists, or raw data. The user trusts you — \
+they will ask if they want details.
+- Never explain what tools you used or how you did something.
+- Never repeat or paraphrase the user's request back to them.
+- Keep every response to one or two short sentences max."""
 
 # ---------------------------------------------------------------------------
 # Main
@@ -262,8 +179,11 @@ Speak naturally as in a face-to-face conversation."""
 
 async def run() -> None:
     region = os.environ.get("AWS_REGION", "us-east-1")
-    voice = os.environ.get("NOVA_SONIC_VOICE", "matthew")
+    voice = os.environ.get("NOVA_SONIC_VOICE", "tiffany")
     model_id = os.environ.get("NOVA_SONIC_MODEL", "amazon.nova-2-sonic-v1:0")
+
+    # Ensure workspace directory exists for subagent file operations
+    os.makedirs("workspace", exist_ok=True)
 
     print("=" * 60)
     print("  Voice Async Tools — Amazon Nova 2 Sonic")
@@ -271,8 +191,8 @@ async def run() -> None:
     print(f"  Model  : {model_id}")
     print(f"  Region : {region}")
     print(f"  Voice  : {voice}")
-    print(f"  Async  : research_topic, analyze_sentiment, fetch_weather")
-    print(f"  Sync   : calculate")
+    print(f"  Async  : handle_task (subagent)")
+    print(f"  Sync   : calculator, current_time")
     print("=" * 60)
     print("  Speak into your microphone. Ctrl+C to quit.")
     print("=" * 60)
@@ -305,7 +225,7 @@ async def run() -> None:
     agent = BidiAgent(
         model=model,
         system_prompt=SYSTEM_PROMPT,
-        tools=[research_topic, analyze_sentiment, fetch_weather, calculate],
+        tools=[handle_task, calculator, current_time],
     )
 
     # Audio I/O with echo cancellation (LiveKit WebRTC APM)
