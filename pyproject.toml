@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "boto3>=1.42.49",
+    "livekit>=1.0.25",
     "numpy>=2.4.2",
-    "pyaec>=1.0.1",
     "strands-agents[bidi]>=1.26.0",
     "textual>=7.5.0",
 ]

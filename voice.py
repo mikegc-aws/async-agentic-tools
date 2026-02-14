@@ -308,10 +308,8 @@ async def run() -> None:
         tools=[research_topic, analyze_sentiment, fetch_weather, calculate],
     )
 
-    # Audio I/O with echo cancellation (speexdsp via pyaec)
-    # filter_ms: AEC filter length — 300ms covers typical laptop echo path
-    # duck_gain: residual attenuation during playback (0.3 = 70% suppression)
-    audio_io = AecAudioIO(filter_ms=300, duck_gain=0.3)
+    # Audio I/O with echo cancellation (LiveKit WebRTC APM)
+    audio_io = AecAudioIO()
 
     # Transcript output (prints to console)
     transcript_output = ConsoleTranscriptOutput()
