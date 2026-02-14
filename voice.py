@@ -25,7 +25,6 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any
 
-import boto3
 from strands import tool
 from strands.experimental.bidi import BidiAgent, BidiAudioIO
 from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
@@ -283,6 +282,7 @@ async def run() -> None:
     manager.on_complete = make_async_callback(result_input)
 
     # Create Nova 2 Sonic model
+    # Pass region only — the model creates its own boto session.
     model = BidiNovaSonicModel(
         model_id=model_id,
         provider_config={
@@ -295,7 +295,6 @@ async def run() -> None:
             },
         },
         client_config={
-            "boto_session": boto3.Session(),
             "region": region,
         },
     )
