@@ -16,7 +16,8 @@ class AsyncAgent:
     - If the agent is busy -> queue the result; deliver when the agent finishes.
 
     Callbacks:
-        on_response(text)          — called with each agent response
+        on_response(text)          — called with each agent response (default: no-op;
+                                      underlying Strands Agent prints, so we don't duplicate)
         on_status(event_type, msg) — called for lifecycle events:
             "callback"  — async task completed, delivering to agent
             "queued"    — async task completed, agent busy, queued
@@ -50,7 +51,8 @@ class AsyncAgent:
 
     @staticmethod
     def _default_on_response(text: str) -> None:
-        print(f"\n\033[36mAGENT:\033[0m {text}\n")
+        """No-op by default so the underlying Strands Agent's output is the only print."""
+        pass
 
     @staticmethod
     def _default_on_status(event_type: str, message: str) -> None:
