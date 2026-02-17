@@ -25,7 +25,7 @@ from strands_tools import calculator, editor, file_read, file_write, http_reques
 os.environ["BYPASS_TOOL_CONSENT"] = "true"
 
 # ---------------------------------------------------------------------------
-# Async Tool Manager — shared with voice.py
+# Async Tool Manager — shared with voice.voice
 # ---------------------------------------------------------------------------
 
 manager = AsyncToolManager(max_workers=8)
@@ -81,7 +81,7 @@ def _create_subagent() -> Agent:
 
 @tool_async(manager)
 def handle_task(task: str) -> str:
-    """Only call this AFTER you have already called file_read with path "workspace/" and mode "find" and confirmed no relevant file exists. Run a task in the background (web research, current info, long work). You get the result later in [ASYNC RESULT] as SUBAGENT ANSWER. The subagent may write "More in workspace/filename" — use file_read on that file only if the user asks for more.
+    """Only call this AFTER you have already called read_workspace with path "workspace/" and mode "find" and confirmed no relevant file exists. Run a task in the background (web research, current info, long work). You get the result later in [ASYNC RESULT] as SUBAGENT ANSWER. The subagent may write "More in workspace/filename" — use read_workspace on that file only if the user asks for more.
     """
     agent = _create_subagent()
     result = agent(task)

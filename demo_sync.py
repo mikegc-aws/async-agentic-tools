@@ -1,7 +1,7 @@
-"""Async agent demo — tools + simple CLI (input a line, get responses).
+"""Synchronous agent demo — regular tools + simple CLI (input a line, get responses).
 
 Run:
-    uv run python demo.py
+    uv run python demo_sync.py
 
 Requires AWS credentials for Bedrock. STRANDS_MODEL env var overrides the model.
 """
@@ -10,30 +10,23 @@ import os
 import random
 import time
 
-from strands import Agent
+from strands import Agent, tool
 
-from strands_async_tools import AsyncAgent, AsyncToolManager, tool_async
 from strands_tools.calculator import calculator
 from strands_tools.current_time import current_time
 
 # ---------------------------------------------------------------------------
-# Async delay bounds (seconds) — simulated latency per tool
+# Delay bounds (seconds) — simulated latency per tool
 # ---------------------------------------------------------------------------
 
 DELAY_MIN, DELAY_MAX = 10.0, 20.0
 
 # ---------------------------------------------------------------------------
-# Async Tool Manager
-# ---------------------------------------------------------------------------
-
-manager = AsyncToolManager(max_workers=4)
-
-# ---------------------------------------------------------------------------
-# Async Tools — these run in background threads, results arrive via callback
+# Synchronous Tools — these block until completion
 # ---------------------------------------------------------------------------
 
 
-@tool_async(manager)
+@tool
 def research_topic(topic: str) -> str:
     """Research a topic thoroughly and return detailed findings."""
     delay = random.uniform(DELAY_MIN, DELAY_MAX)
@@ -48,7 +41,7 @@ def research_topic(topic: str) -> str:
     return "\n".join(random.sample(findings, k=random.randint(2, 4)))
 
 
-@tool_async(manager)
+@tool
 def analyze_sentiment(text: str) -> str:
     """Analyze the sentiment and key themes in a piece of text."""
     delay = random.uniform(DELAY_MIN, DELAY_MAX)
@@ -74,7 +67,7 @@ def analyze_sentiment(text: str) -> str:
     )
 
 
-@tool_async(manager)
+@tool
 def fetch_weather(city: str) -> str:
     """Get the current weather for a city."""
     delay = random.uniform(DELAY_MIN, DELAY_MAX)
@@ -93,25 +86,13 @@ def fetch_weather(city: str) -> str:
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
-You are a helpful assistant with both synchronous and asynchronous tools.
+You are a helpful assistant with synchronous tools.
 
-ASYNC TOOLS (run in background, results arrive later):
-  research_topic, analyze_sentiment, fetch_weather
+AVAILABLE TOOLS:
+  research_topic, analyze_sentiment, fetch_weather, calculator, current_time
 
-When you call an async tool it returns a task ID immediately.
-The actual result will arrive in a future message tagged [ASYNC RESULT].
-Rules:
-  - Do NOT guess or fabricate async results. Wait for [ASYNC RESULT].
-  - Tell the user each task has been started.
-  - You CAN dispatch multiple async tools at once — they run in parallel.
-
-SYNC TOOLS (return immediately):
-  calculator, current_time
-
-When you receive an [ASYNC RESULT]:
-  - Summarize the result naturally for the user.
-  - If tasks are still pending, mention you are waiting.
-  - Once all results are in, give a cohesive summary.
+All tools are synchronous and will block until they complete.
+When you call a tool, you must wait for its result before proceeding.
 
 Keep responses concise."""
 
@@ -119,7 +100,7 @@ Keep responses concise."""
 def main() -> None:
     model_id = os.environ.get("STRANDS_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
 
-    print("Async agent — async tools (research, sentiment, weather) + sync (calculator, current_time).")
+    print("Synchronous agent — all tools block until completion.")
     print("Type a message and press Enter. quit / exit / q to exit.\n")
 
     agent = Agent(
@@ -127,20 +108,21 @@ def main() -> None:
         system_prompt=SYSTEM_PROMPT,
         tools=[research_topic, analyze_sentiment, fetch_weather, calculator, current_time],
     )
-    async_agent = AsyncAgent(agent=agent, manager=manager)
 
     while True:
         try:
-            line = input("You: ").strip()
+            line = input("\nYou: ").strip()
         except EOFError:
             break
         if not line or line.lower() in ("quit", "exit", "q"):
             break
-        async_agent.send(line)
 
-    manager.shutdown()
+        # Send message and get response
+        agent(line)
+
     print("Bye.")
 
 
 if __name__ == "__main__":
     main()
+

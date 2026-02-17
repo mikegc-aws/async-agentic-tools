@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -8,3 +11,8 @@ wheels/
 
 # Virtual environments
 .venv
+workspace/
+
+# Voice debug log (default: voice/voice_debug.log when running voice agent)
+voice_debug.log
+voice/voice_debug.log

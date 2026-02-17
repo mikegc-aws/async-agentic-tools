@@ -9,7 +9,7 @@ process_reverse_stream(), and mic input is cleaned via process_stream().
 Dynamic delay estimation keeps the canceller aligned with actual latency.
 
 Usage:
-    from echo_cancel import AecAudioIO
+    from voice.echo_cancel import AecAudioIO
 
     audio_io = AecAudioIO()           # same API as BidiAudioIO
     await agent.run(
