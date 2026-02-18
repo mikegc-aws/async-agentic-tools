@@ -16,7 +16,7 @@ The demo is built on [Strands Agents](https://github.com/strands-agents/sdk-pyth
 
 Read the [blog post](https://blog.mikegchambers.com/posts/async-agentic-tools/) for the full explanation of the problem and how this works.
 
-**Quick walkthrough video here:** 
+**Quick walkthrough video here:** "Do async tool calls work now???"
 [![Watch the video](https://img.youtube.com/vi/VYLBCoxbPE8/maxresdefault.jpg)](https://youtu.be/VYLBCoxbPE8)
 
 ## How it works
