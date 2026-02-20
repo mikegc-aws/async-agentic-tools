@@ -2,9 +2,9 @@
 
 # 🧰⛓️‍💥 async-agentic-tools
 
-[![GitHub stars](https://img.shields.io/github/stars/mikegc-aws/async-agentic-tools)](https://github.com/mikegc-aws/async-agentic-tools/stargazers)
-[![License](https://img.shields.io/github/license/mikegc-aws/async-agentic-tools)](https://github.com/mikegc-aws/async-agentic-tools/blob/main/LICENSE)
-[![Python](https://img.shields.io/badge/python-3.14%2B-blue)](https://python.org)
+[![GitHub stars](https://img.shields.io/github/stars/mikegc-aws/async-agentic-tools.svg)](https://github.com/mikegc-aws/async-agentic-tools/stargazers)
+[![License](https://img.shields.io/github/license/mikegc-aws/async-agentic-tools.svg)](https://github.com/mikegc-aws/async-agentic-tools/blob/main/LICENSE)
+[![Python](https://img.shields.io/badge/python-3.14%2B-blue.svg)](https://python.org)
 
 True asynchronous agentic tools — the model dispatches a tool, gets an immediate acknowledgement, and keeps talking. Results are delivered via callback when they complete — no blocked loops, no dead air.
 
