@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "async-agentic-tools"
 version = "0.1.0"
@@ -5,9 +9,17 @@ description = "True async agentic tools — callback-driven delivery for AI agen
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "strands-agents>=1.26.0",
+]
+
+[project.optional-dependencies]
+voice = [
     "boto3>=1.42.49",
     "livekit>=1.0.25",
     "numpy>=2.4.2",
     "strands-agents[bidi]>=1.26.0",
     "strands-agents-tools>=0.2.20",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["strands_async_tools"]
