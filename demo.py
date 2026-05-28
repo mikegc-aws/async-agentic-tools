@@ -34,10 +34,19 @@ manager = AsyncToolManager(max_workers=4)
 
 
 @tool_async(manager)
-def research_topic(topic: str) -> str:
+def research_topic(topic: str, report_progress=None) -> str:
     """Research a topic thoroughly and return detailed findings."""
-    delay = random.uniform(DELAY_MIN, DELAY_MAX)
-    time.sleep(delay)
+    steps = [
+        "Searching academic databases...",
+        "Analyzing market reports...",
+        "Cross-referencing sources...",
+        "Synthesizing findings...",
+    ]
+    total = len(steps)
+    for i, step in enumerate(steps):
+        report_progress(i, total, step)
+        time.sleep(random.uniform(DELAY_MIN / total, DELAY_MAX / total))
+    report_progress(total, total, "Research complete")
     findings = [
         f"Key finding: {topic} has seen 340% growth in the last 2 years.",
         f"Major players in {topic} include Acme Corp, Nexus Labs, and Orion Systems.",
@@ -49,10 +58,15 @@ def research_topic(topic: str) -> str:
 
 
 @tool_async(manager)
-def analyze_sentiment(text: str) -> str:
+def analyze_sentiment(text: str, report_progress=None) -> str:
     """Analyze the sentiment and key themes in a piece of text."""
-    delay = random.uniform(DELAY_MIN, DELAY_MAX)
-    time.sleep(delay)
+    report_progress(0, 3, "Tokenizing input...")
+    time.sleep(random.uniform(DELAY_MIN / 3, DELAY_MAX / 3))
+    report_progress(1, 3, "Running sentiment model...")
+    time.sleep(random.uniform(DELAY_MIN / 3, DELAY_MAX / 3))
+    report_progress(2, 3, "Extracting themes...")
+    time.sleep(random.uniform(DELAY_MIN / 3, DELAY_MAX / 3))
+    report_progress(3, 3, "Analysis complete")
     sentiments = [
         "overwhelmingly positive",
         "cautiously optimistic",
@@ -75,10 +89,13 @@ def analyze_sentiment(text: str) -> str:
 
 
 @tool_async(manager)
-def fetch_weather(city: str) -> str:
+def fetch_weather(city: str, report_progress=None) -> str:
     """Get the current weather for a city."""
-    delay = random.uniform(DELAY_MIN, DELAY_MAX)
-    time.sleep(delay)
+    report_progress(0, 2, f"Contacting weather service for {city}...")
+    time.sleep(random.uniform(DELAY_MIN / 2, DELAY_MAX / 2))
+    report_progress(1, 2, "Parsing forecast data...")
+    time.sleep(random.uniform(DELAY_MIN / 2, DELAY_MAX / 2))
+    report_progress(2, 2, "Done")
     conditions = ["sunny", "partly cloudy", "overcast", "light rain", "clear skies"]
     return (
         f"Weather in {city}: {random.choice(conditions)}\n"

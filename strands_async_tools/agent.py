@@ -1,11 +1,16 @@
-"""AsyncAgent — callback-driven wrapper for Strands Agent."""
+"""AsyncAgent — callback-driven wrapper for Strands Agent.
+
+Supports MCP Task progress notifications: when tools report progress during
+execution, the agent relays it to the user via the on_status callback without
+interrupting the current agent invocation.
+"""
 
 import threading
 from typing import Any, Callable
 
 from strands import Agent
 
-from .manager import AsyncToolManager, AsyncTaskResult
+from .manager import AsyncToolManager, AsyncTaskResult, TaskProgress
 
 
 class AsyncAgent:
@@ -15,6 +20,10 @@ class AsyncAgent:
     - If the agent is idle -> immediately invoke the agent with the result.
     - If the agent is busy -> queue the result; deliver when the agent finishes.
 
+    When an async tool reports progress:
+    - Always relayed immediately via on_status("progress", ...).
+    - Does NOT interrupt the agent — progress is informational only.
+
     Callbacks:
         on_response(text)          — called with each agent response (default: no-op;
                                       underlying Strands Agent prints, so we don't duplicate)
@@ -22,6 +31,7 @@ class AsyncAgent:
             "callback"  — async task completed, delivering to agent
             "queued"    — async task completed, agent busy, queued
             "draining"  — delivering a previously queued result
+            "progress"  — async task reported progress (MCP notifications/progress)
             "thinking"  — agent invocation started
             "done"      — agent invocation chain finished
     """
@@ -41,8 +51,9 @@ class AsyncAgent:
         self._lock = threading.Lock()
         self._queued_results: list[AsyncTaskResult] = []
 
-        # Register ourselves as the completion callback
+        # Register ourselves as the completion and progress callbacks
         manager.on_complete = self._on_task_complete
+        manager.on_progress = self._on_task_progress
 
     @property
     def is_busy(self) -> bool:
@@ -56,7 +67,14 @@ class AsyncAgent:
 
     @staticmethod
     def _default_on_status(event_type: str, message: str) -> None:
-        colors = {"callback": "32", "queued": "33", "draining": "34", "thinking": "90", "done": "90"}
+        colors = {
+            "callback": "32",
+            "queued": "33",
+            "draining": "34",
+            "progress": "36",
+            "thinking": "90",
+            "done": "90",
+        }
         color = colors.get(event_type, "0")
         print(f"\n  \033[{color}m[{event_type}]\033[0m {message}")
 
@@ -84,6 +102,17 @@ class AsyncAgent:
             f"{result.tool_name} ({result.task_id}) {status} — delivering to agent now",
         )
         self._invoke(self._format_result(result))
+
+    def _on_task_progress(self, progress: TaskProgress) -> None:
+        """Called from the thread pool when a tool reports progress."""
+        if progress.total is not None:
+            pct = f"{progress.progress}/{progress.total}"
+        else:
+            pct = f"{progress.progress}"
+        msg = f"{progress.tool_name} ({progress.task_id}) [{pct}]"
+        if progress.message:
+            msg += f" {progress.message}"
+        self.on_status("progress", msg)
 
     # ---- Formatting ----
 
